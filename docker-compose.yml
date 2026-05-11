@@ -1,0 +1,11 @@
+services:
+  immich-alben-sync:
+    build: .
+    image: immich-alben-sync:latest
+    container_name: immich-alben-sync
+    environment:
+      - IMMICH_API_KEY=${IMMICH_API_KEY}
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./state:/data
+    restart: "no"

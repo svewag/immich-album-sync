@@ -1,0 +1,14 @@
+immich:
+  base_url: "http://192.168.1.50:2283"
+
+library_roots:
+  - "/mnt/photos"
+
+patterns:
+  - "{root}/{year}/{album}"
+  - "{root}/{year}/{album}/{*}"
+
+state_file: "/data/state.json"
+
+logging:
+  level: "INFO"
