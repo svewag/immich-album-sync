@@ -56,14 +56,36 @@ class Asset:
     id: str
     original_path: str
     type: str
+    latitude: float | None = None
+    longitude: float | None = None
+    file_created_at: str | None = None
 
     @classmethod
     def from_api(cls, raw: dict) -> "Asset":
+        exif = raw.get("exifInfo") or {}
         return cls(
             id=raw["id"],
             original_path=raw.get("originalPath") or "",
             type=raw.get("type", ""),
+            latitude=_to_float_or_none(exif.get("latitude")),
+            longitude=_to_float_or_none(exif.get("longitude")),
+            file_created_at=raw.get("fileCreatedAt") or raw.get("localDateTime"),
         )
+
+
+def _to_float_or_none(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
 @dataclass

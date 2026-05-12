@@ -12,3 +12,18 @@ state_file: "/data/state.json"
 
 logging:
   level: "INFO"
+
+# Optionale Geo-Verfeinerung: Bilder mit EXIF-GPS, die innerhalb des Radius
+# einer konfigurierten Location liegen, landen in einem feineren Sub-Album
+# "{album} – {location}". Bilder ohne Treffer bleiben im Parent-Album.
+# Diesen ganzen Block weglassen, um Geo zu deaktivieren.
+# geo:
+#   default_radius_m: 500
+#   locations:
+#     - name: "Marienplatz"
+#       lat: 48.1374
+#       lon: 11.5755
+#     - name: "Tegernsee"
+#       lat: 47.7113
+#       lon: 11.7553
+#       radius_m: 3000    # pro Location optional gegen default überschreibbar

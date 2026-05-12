@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from immich_alben.config import Config, ImmichConfig, LoggingConfig
+from immich_alben.config import Config, GeoConfig, GeoLocation, ImmichConfig, LoggingConfig
 from immich_alben.immich import Album, Asset
 from immich_alben.sync import run as run_sync
 
@@ -47,18 +47,44 @@ class FakeImmichClient:
         return {"results": []}
 
 
-def _cfg(tmp_path: Path) -> Config:
+def _cfg(
+    tmp_path: Path,
+    *,
+    geo_locations: list[GeoLocation] | None = None,
+) -> Config:
     return Config(
         immich=ImmichConfig(base_url="http://x"),
         library_roots=["/mnt/photos"],
         patterns=["{root}/{year}/{album}", "{root}/{year}/{album}/{*}"],
         state_file=tmp_path / "state.json",
         logging=LoggingConfig(level="WARN"),
+        geo=GeoConfig(locations=geo_locations or []),
     )
 
 
-def _asset(id_: str, path: str, type_: str = "IMAGE") -> Asset:
-    return Asset(id=id_, original_path=path, type=type_)
+def _asset(
+    id_: str,
+    path: str,
+    type_: str = "IMAGE",
+    *,
+    lat: float | None = None,
+    lon: float | None = None,
+    file_created_at: str | None = None,
+) -> Asset:
+    return Asset(
+        id=id_,
+        original_path=path,
+        type=type_,
+        latitude=lat,
+        longitude=lon,
+        file_created_at=file_created_at,
+    )
+
+
+# Reusable locations for geo-cases
+ROM = GeoLocation(name="Rom", lat=41.9028, lon=12.4964, radius_m=2000.0)
+FLORENZ = GeoLocation(name="Florenz", lat=43.7696, lon=11.2558, radius_m=2000.0)
+MARIENPLATZ = GeoLocation(name="Marienplatz", lat=48.1374, lon=11.5755, radius_m=500.0)
 
 
 # ============================================================
@@ -237,3 +263,123 @@ def test_unmatched_assets_are_not_written_anywhere(tmp_path: Path):
 
     assert client.created_albums == []
     assert client.add_calls == []
+
+
+# ============================================================
+# Geo refinement
+# ============================================================
+
+def test_geo_refines_path_album_into_sub_album(tmp_path: Path):
+    assets = [
+        _asset("a1", "/mnt/photos/2024/Italien/01.jpg", lat=41.9028, lon=12.4964),
+        _asset("a2", "/mnt/photos/2024/Italien/02.jpg", lat=43.7696, lon=11.2558),
+        _asset("a3", "/mnt/photos/2024/Italien/03.jpg"),  # no GPS -> parent
+    ]
+    client = FakeImmichClient(assets=assets)
+    run_sync(client, _cfg(tmp_path, geo_locations=[ROM, FLORENZ]), dry_run=False)
+
+    by_name = {name: ids for name, ids in client.created_albums}
+    assert by_name == {
+        "Italien – Rom": ["a1"],
+        "Italien – Florenz": ["a2"],
+        "Italien": ["a3"],
+    }
+
+
+def test_geo_standalone_album_for_asset_without_path_match(tmp_path: Path):
+    """Asset directly under /year/ without album dir -> usually unmatched,
+    but with a GPS hit it lands in a stand-alone geo album."""
+    assets = [
+        _asset(
+            "a1",
+            "/mnt/photos/2024/loose.jpg",
+            lat=48.1374,
+            lon=11.5755,
+            file_created_at="2024-06-12T10:00:00.000Z",
+        ),
+    ]
+    client = FakeImmichClient(assets=assets)
+    run_sync(client, _cfg(tmp_path, geo_locations=[MARIENPLATZ]), dry_run=False)
+
+    assert len(client.created_albums) == 1
+    name, ids = client.created_albums[0]
+    assert name == "Marienplatz"
+    assert ids == ["a1"]
+
+
+def test_geo_standalone_without_file_created_at_is_unmatched(tmp_path: Path):
+    assets = [
+        _asset("a1", "/mnt/photos/2024/loose.jpg", lat=48.1374, lon=11.5755),
+    ]
+    client = FakeImmichClient(assets=assets)
+    run_sync(client, _cfg(tmp_path, geo_locations=[MARIENPLATZ]), dry_run=False)
+
+    assert client.created_albums == []
+
+
+def test_geo_multiple_matches_pick_nearest(tmp_path: Path):
+    # Two overlapping wide-radius locations; query right on Rom.
+    big_rom = GeoLocation(name="Rom", lat=41.9028, lon=12.4964, radius_m=5000.0)
+    big_florenz = GeoLocation(name="Florenz", lat=43.7696, lon=11.2558, radius_m=500_000.0)
+    assets = [
+        _asset("a1", "/mnt/photos/2024/Italien/01.jpg", lat=41.9028, lon=12.4964),
+    ]
+    client = FakeImmichClient(assets=assets)
+    run_sync(client, _cfg(tmp_path, geo_locations=[big_florenz, big_rom]), dry_run=False)
+
+    by_name = {name: ids for name, ids in client.created_albums}
+    assert by_name == {"Italien – Rom": ["a1"]}
+
+
+def test_geo_no_locations_means_pure_path_behavior(tmp_path: Path):
+    """GPS data present but config has no locations -> behaves like before."""
+    assets = [
+        _asset("a1", "/mnt/photos/2024/Italien/01.jpg", lat=41.9028, lon=12.4964),
+    ]
+    client = FakeImmichClient(assets=assets)
+    run_sync(client, _cfg(tmp_path), dry_run=False)  # no geo_locations
+
+    by_name = {name: ids for name, ids in client.created_albums}
+    assert by_name == {"Italien": ["a1"]}
+
+
+def test_geo_dry_run_still_writes_nothing(tmp_path: Path):
+    assets = [
+        _asset("a1", "/mnt/photos/2024/Italien/01.jpg", lat=41.9028, lon=12.4964),
+        _asset(
+            "a2",
+            "/mnt/photos/2024/loose.jpg",
+            lat=48.1374,
+            lon=11.5755,
+            file_created_at="2024-06-12T10:00:00.000Z",
+        ),
+    ]
+    client = FakeImmichClient(assets=assets)
+    run_sync(
+        client,
+        _cfg(tmp_path, geo_locations=[ROM, MARIENPLATZ]),
+        dry_run=True,
+    )
+
+    assert client.created_albums == []
+    assert client.add_calls == []
+
+
+def test_geo_idempotent_second_run(tmp_path: Path):
+    """Running twice in a row creates albums once, then nothing changes."""
+    assets = [
+        _asset("a1", "/mnt/photos/2024/Italien/01.jpg", lat=41.9028, lon=12.4964),
+    ]
+    client = FakeImmichClient(assets=assets)
+    cfg = _cfg(tmp_path, geo_locations=[ROM])
+
+    run_sync(client, cfg, dry_run=False)
+    assert len(client.created_albums) == 1
+    assert client.created_albums[0][0] == "Italien – Rom"
+
+    # Second run: state is persisted, album exists, no new writes
+    before_creates = len(client.created_albums)
+    before_adds = len(client.add_calls)
+    run_sync(client, cfg, dry_run=False)
+    assert len(client.created_albums) == before_creates
+    assert len(client.add_calls) == before_adds

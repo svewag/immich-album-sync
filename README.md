@@ -63,6 +63,37 @@ logging:
 
 Wichtig: `{album}` ist **immer** ein Verzeichnis-Segment; danach folgt entweder direkt der Dateiname oder ein `{*}` (oder weitere Literale).
 
+### Geo-Verfeinerung (optional)
+
+Bilder mit EXIF-GPS können zusätzlich anhand einer vorher konfigurierten Liste von Orten in feinere Alben sortiert werden. Die GPS-Koordinaten kommen aus `exifInfo` im Immich-Search-Response — kein NAS-Mount, keine zusätzliche Dependency.
+
+```yaml
+geo:
+  default_radius_m: 500
+  locations:
+    - name: "Marienplatz"
+      lat: 48.1374
+      lon: 11.5755
+    - name: "Tegernsee"
+      lat: 47.7113
+      lon: 11.7553
+      radius_m: 3000    # Override pro Location
+```
+
+Verhalten pro Asset:
+
+| Fall | Resultat |
+|---|---|
+| Path-Match + GPS innerhalb einer Location | Album `"{album} – {location}"` (z.B. `Italien – Rom`) |
+| Path-Match, kein GPS bzw. außerhalb aller Locations | Album `{album}` (wie ohne Geo) |
+| Kein Path-Match, aber GPS in einer Location | Album `{location}` (year aus `fileCreatedAt`) |
+| Liegt im Radius mehrerer Locations | Nächste gewinnt (Haversine-Distanz) |
+| Liegt in keiner Location | Fällt zurück auf Path-Album oder bleibt unmatched |
+
+Wird der `geo:`-Block weggelassen oder `geo.locations` leer gelassen, verhält sich das Tool wie zuvor (nur Path-Pattern).
+
+**Wichtig — Altlasten beim Erstaktivieren:** Wenn vor der Aktivierung schon Bilder im Album `Italien` gelandet sind, bleiben sie dort. Das Tool kann durch sein Sicherheitsmodell keine Assets aus Alben entfernen (siehe oben). Neue Läufe legen die feineren Geo-Alben an und fügen passende Bilder dort dazu — die alten Einträge im Parent-Album bleiben als Altlast bestehen.
+
 ### API-Key
 
 Wird als Env-Var `IMMICH_API_KEY` übergeben (nicht in `config.yaml`).

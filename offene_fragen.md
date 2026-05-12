@@ -83,3 +83,9 @@ Hast du SSH auf der Synology aktiviert (Systemsteuerung → Terminal & SNMP), od
 Sicherst du das `/volume1/docker/`-Verzeichnis schon (z.B. mit Hyper Backup oder Btrfs Snapshots)?
 
 → Das Tool speichert eine kleine State-Datei. Wenn die verloren geht, riskieren wir bei einem späteren Lauf doppelt angelegte Alben. Eine simple Snapshot-Aktivierung auf dem Shared Folder reicht.
+
+### 13. Geo-Verfeinerung (optional)
+
+Wenn du möchtest, kann das Tool Bilder mit EXIF-GPS zusätzlich anhand einer konfigurierten Liste von Orten in feinere Alben sortieren (z.B. `Italien – Rom` statt nur `Italien`). Dazu brauche ich pro Ort: Name, lat/lon und optional einen Radius (Default 500 m). Details siehe README, Abschnitt „Geo-Verfeinerung".
+
+→ Komplett optional. Ohne `geo:`-Block in der Config bleibt das Verhalten wie zuvor.

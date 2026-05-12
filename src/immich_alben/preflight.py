@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 
 from .config import Config
+from .geo import match_location
 from .immich import ImmichClient, ImmichError
 from .patterns import match_path
 
@@ -20,6 +21,8 @@ class PreflightResult:
     sample_total: int
     sample_matched: int
     sample_unmatched_examples: list[str]
+    sample_gps_present: int = 0
+    sample_geo_matched: int = 0
 
 
 def run(client: ImmichClient, cfg: Config, sample_size: int = 50) -> PreflightResult:
@@ -39,7 +42,10 @@ def run(client: ImmichClient, cfg: Config, sample_size: int = 50) -> PreflightRe
 
     matched = 0
     total = 0
+    gps_present = 0
+    geo_matched = 0
     unmatched_examples: list[str] = []
+    geo_enabled = cfg.geo.enabled
     if auth_valid:
         try:
             for asset in client.iter_assets(page_size=sample_size):
@@ -49,11 +55,19 @@ def run(client: ImmichClient, cfg: Config, sample_size: int = 50) -> PreflightRe
                     matched += 1
                 elif len(unmatched_examples) < 5:
                     unmatched_examples.append(asset.original_path)
+                if geo_enabled and asset.latitude is not None and asset.longitude is not None:
+                    gps_present += 1
+                    if match_location(asset.latitude, asset.longitude, cfg.geo.locations):
+                        geo_matched += 1
                 if total >= sample_size:
                     break
             print(f"  Pattern sample: {matched}/{total} matched")
             for ex in unmatched_examples:
                 print(f"    unmatched example: {ex}")
+            if geo_enabled:
+                print(f"  Geo locations configured : {len(cfg.geo.locations)}")
+                print(f"  Sample GPS coverage      : {gps_present}/{total} assets")
+                print(f"  Sample geo-matches       : {geo_matched}/{total} within configured radii")
         except ImmichError as e:
             print(f"  Pattern sample: FAILED ({e})")
 
@@ -66,4 +80,6 @@ def run(client: ImmichClient, cfg: Config, sample_size: int = 50) -> PreflightRe
         sample_total=total,
         sample_matched=matched,
         sample_unmatched_examples=unmatched_examples,
+        sample_gps_present=gps_present,
+        sample_geo_matched=geo_matched,
     )
